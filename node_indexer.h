@@ -7,11 +7,11 @@
 #include <boost/geometry/index/rtree.hpp>
 #include <boost/geometry/index/parameters.hpp>
 #include <boost/numeric/conversion/cast.hpp>
-#include <boost/range/algorithm.hpp>
+#include <boost/range/algorithm/sort.hpp>
+#include <boost/range/algorithm/unique.hpp>
+#include <boost/range/algorithm_ext/erase.hpp>
 
 #include "osm_point.h"
-
-namespace {
 
 // Spatially indexes nodes for specific ways.
 struct rtree_indexer_t : osmium::handler::Handler {
@@ -43,7 +43,9 @@ struct rtree_indexer_t : osmium::handler::Handler {
 
   // To use the packing implementation, store all nodes and then construct the index at once.
   void pack() {
-    rtree_t packed{boost::unique(boost::sort(points))};
+    boost::erase(points, boost::unique<boost::return_found_end>(boost::sort(points)));
+
+    rtree_t packed{points};
 
     using std::swap; // ADL
     swap(rtree, packed);
@@ -56,4 +58,3 @@ struct rtree_indexer_t : osmium::handler::Handler {
   std::vector<osm_point_t> points;
   rtree_t rtree;
 };
-}
