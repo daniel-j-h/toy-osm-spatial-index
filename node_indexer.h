@@ -5,9 +5,10 @@
 #include <osmium/osm/types.hpp>
 #include <osmium/handler.hpp>
 #include <boost/numeric/conversion/cast.hpp>
-#include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm/unique.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
+
+#include <tbb/parallel_sort.h>
 
 #include "osm_point.h"
 #include "parallel_rtree.h"
@@ -36,9 +37,10 @@ struct rtree_indexer_t : osmium::handler::Handler {
 
   // To use the packing implementation, store all nodes and then construct the index in parallel at once.
   void pack() {
-    boost::erase(points, boost::unique<boost::return_found_end>(boost::sort(points)));
+    tbb::parallel_sort(points);
+    boost::erase(points, boost::unique<boost::return_found_end>(points));
 
-    boost::sort(points, [](const auto& lhs, const auto& rhs) { return lhs.lon < rhs.lon; });
+    tbb::parallel_sort(points, [](const auto& lhs, const auto& rhs) { return lhs.lon < rhs.lon; });
     parallel_rtree<osm_point_t> packed{points};
 
     using std::swap; // ADL

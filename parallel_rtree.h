@@ -24,7 +24,7 @@
 
 // Parallel packing assumption making implementation of an rtree to speed up construction.
 // Assumption: user passes in a geographically sorted range (e.g. by longitude) we can chunk on.
-template <typename Value, std::size_t ChunkSize = 100'000>
+template <typename Value, std::size_t ChunkSize = 1'000'000>
 class parallel_rtree final {
 public:
   using value_type = Value;
