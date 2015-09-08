@@ -52,11 +52,11 @@ int main(int argc, char** argv) try {
   const constexpr auto k = 3u;
   osm_point_t p{0, 13'4075810, 52'5197930};
 
-  std::vector<osm_point_t> knn(k);
+  std::vector<osm_point_t> knn;
 
   { // Time nearest neighbor query on spatial index
     boost::timer::auto_cpu_timer t;
-    indexer.rtree.query(boost::geometry::index::nearest(p, k), std::begin(knn));
+    indexer.rtree.query(boost::geometry::index::nearest(p, k), std::back_inserter(knn));
     std::cout << "Nearest neighbor query on " << size << " items:" << std::endl;
   }
 

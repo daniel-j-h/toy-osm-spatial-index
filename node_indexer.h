@@ -4,23 +4,16 @@
 
 #include <osmium/osm/types.hpp>
 #include <osmium/handler.hpp>
-#include <boost/geometry/index/rtree.hpp>
-#include <boost/geometry/index/parameters.hpp>
 #include <boost/numeric/conversion/cast.hpp>
 #include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm/unique.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
 
 #include "osm_point.h"
+#include "parallel_rtree.h"
 
 // Spatially indexes nodes for specific ways.
 struct rtree_indexer_t : osmium::handler::Handler {
-  // using rtree_param_t = boost::geometry::index::linear<64>;
-  // using rtree_param_t = boost::geometry::index::quadratic<32>;
-  using rtree_param_t = boost::geometry::index::rstar<32>;
-
-  using rtree_t = boost::geometry::index::rtree<osm_point_t, rtree_param_t>;
-
   void way(const osmium::Way& way) {
     // Just an example here, we should also look into osmium's filter features
     if (!way.get_value_by_key("highway"))
@@ -41,20 +34,21 @@ struct rtree_indexer_t : osmium::handler::Handler {
   }
 
 
-  // To use the packing implementation, store all nodes and then construct the index at once.
+  // To use the packing implementation, store all nodes and then construct the index in parallel at once.
   void pack() {
     boost::erase(points, boost::unique<boost::return_found_end>(boost::sort(points)));
 
-    rtree_t packed{points};
+    boost::sort(points, [](const auto& lhs, const auto& rhs) { return lhs.lon < rhs.lon; });
+    parallel_rtree<osm_point_t> packed{points};
 
     using std::swap; // ADL
     swap(rtree, packed);
 
-    // Reclaim memory
+    // Reclaim memory. This also means until here we keep 1/ all points and 2/ the rtree in memory (hint: bad).
     decltype(points) empty{};
     swap(points, empty);
   }
 
   std::vector<osm_point_t> points;
-  rtree_t rtree;
+  parallel_rtree<osm_point_t> rtree;
 };
