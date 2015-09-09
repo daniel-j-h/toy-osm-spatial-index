@@ -1,7 +1,7 @@
 #include <boost/assert.hpp>
 #include <boost/range/numeric.hpp>
-#include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm/for_each.hpp>
+#include <boost/range/algorithm/nth_element.hpp>
 #include <boost/range/algorithm_ext/copy_n.hpp>
 #include <boost/algorithm/cxx11/any_of.hpp>
 #include <boost/geometry/index/rtree.hpp>
@@ -70,22 +70,25 @@ public:
     using nearest_type = boost::geometry::index::detail::nearest<Value>; // XXX: hack, is impl. detail
     static_assert(std::is_same<Predicates, nearest_type>(), "only nearest neighbor query merging supported right now");
 
+    const auto k = static_cast<std::size_t>(predicates.count);
+
     std::vector<value_type> all;
-    all.reserve(static_cast<size_type>(predicates.count) * forest.size());
+    all.reserve(k * forest.size());
 
     const auto gather = [&all, &predicates](const auto& rtree) { rtree.query(predicates, std::back_inserter(all)); };
     boost::for_each(forest, gather);
+
+    const auto n = std::min(k, all.size());
 
     const auto dist = [&predicates](const auto& lhs, const auto& rhs) {
       return boost::geometry::comparable_distance(predicates.point_or_relation, lhs) <
              boost::geometry::comparable_distance(predicates.point_or_relation, rhs);
     };
-    boost::sort(all, dist);
 
-    const auto rv = std::min(static_cast<size_type>(predicates.count), all.size());
-    boost::copy_n(all, rv, out);
+    boost::nth_element(all, begin(all) + n, dist);
+    boost::copy_n(all, n, out);
 
-    return rv;
+    return n;
   }
 
 private:
