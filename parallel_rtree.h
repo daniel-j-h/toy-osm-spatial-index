@@ -41,55 +41,14 @@ public:
   parallel_rtree(const Range& rng)
       : parallel_rtree(begin(rng), end(rng)) {}
 
-  parallel_rtree(const parallel_rtree&) = default;
-  parallel_rtree& operator=(const parallel_rtree&) = default;
+  size_type size() const;
 
-  parallel_rtree(parallel_rtree&&) = default;
-  parallel_rtree& operator=(parallel_rtree&&) = default;
+  bool empty() const;
 
-  friend void swap(parallel_rtree& lhs, parallel_rtree& rhs) { swap(lhs.forest, rhs.forest); }
-
-  size_type size() const {
-    return boost::accumulate(forest, size_type(0), [](const auto n, const auto& rtree) { return n + rtree.size(); });
-  }
-
-  bool empty() const {
-    return !boost::algorithm::any_of(forest, [](const auto& rtree) { return !rtree.empty(); });
-  }
-
-  void clear() {
-    boost::for_each(forest, [](const auto& rtree) { rtree.clear(); });
-  }
+  void clear();
 
   template <typename Predicates, typename OutIter>
-  size_type query(const Predicates& predicates, OutIter out) const {
-    // Queries are so fast we don't need parallelism here, would only introduce overhead.
-
-    // For all nearest neighbors, we query all rtrees and manually pick the nearest k items.
-    // TODO: implement this in a more elegant and abstract way.
-    using nearest_type = boost::geometry::index::detail::nearest<Value>; // XXX: hack, is impl. detail
-    static_assert(std::is_same<Predicates, nearest_type>(), "only nearest neighbor query merging supported right now");
-
-    const auto k = static_cast<std::size_t>(predicates.count);
-
-    std::vector<value_type> all;
-    all.reserve(k * forest.size());
-
-    const auto gather = [&all, &predicates](const auto& rtree) { rtree.query(predicates, std::back_inserter(all)); };
-    boost::for_each(forest, gather);
-
-    const auto n = std::min(k, all.size());
-
-    const auto dist = [&predicates](const auto& lhs, const auto& rhs) {
-      return boost::geometry::comparable_distance(predicates.point_or_relation, lhs) <
-             boost::geometry::comparable_distance(predicates.point_or_relation, rhs);
-    };
-
-    boost::nth_element(all, begin(all) + n, dist);
-    boost::copy_n(all, n, out);
-
-    return n;
-  }
+  size_type query(const Predicates& predicates, OutIter out) const;
 
 private:
   std::vector<rtree_type> forest;
@@ -125,4 +84,54 @@ parallel_rtree<Value, ChunkSize>::parallel_rtree(Iter first, Iter last) {
 
   // All rtrees built, good to switch in.
   std::swap(preForest, forest);
+}
+
+
+template <typename Value, std::size_t ChunkSize>
+typename parallel_rtree<Value, ChunkSize>::size_type parallel_rtree<Value, ChunkSize>::size() const {
+  return boost::accumulate(forest, size_type(0), [](const auto n, const auto& rtree) { return n + rtree.size(); });
+}
+
+template <typename Value, std::size_t ChunkSize>
+bool parallel_rtree<Value, ChunkSize>::empty() const {
+  return !boost::algorithm::any_of(forest, [](const auto& rtree) { return !rtree.empty(); });
+}
+
+
+template <typename Value, std::size_t ChunkSize>
+void parallel_rtree<Value, ChunkSize>::clear() {
+  boost::for_each(forest, [](const auto& rtree) { rtree.clear(); });
+}
+
+
+// Queries are so fast we don't need parallelism here, would only introduce overhead.
+template <typename Value, std::size_t ChunkSize>
+template <typename Predicates, typename OutIter>
+typename parallel_rtree<Value, ChunkSize>::size_type parallel_rtree<Value, ChunkSize>::query(
+    const Predicates& predicates, OutIter out) const {
+
+  // For all nearest neighbors, we query all rtrees and manually pick the nearest k items.
+  // TODO: implement this in a more elegant and abstract way.
+  using nearest_type = boost::geometry::index::detail::nearest<Value>; // XXX: hack, is impl. detail
+  static_assert(std::is_same<Predicates, nearest_type>(), "only nearest neighbor query merging supported right now");
+
+  const auto k = static_cast<std::size_t>(predicates.count);
+
+  std::vector<value_type> all;
+  all.reserve(k * forest.size());
+
+  const auto gather = [&all, &predicates](const auto& rtree) { rtree.query(predicates, std::back_inserter(all)); };
+  boost::for_each(forest, gather);
+
+  const auto n = std::min(k, all.size());
+
+  const auto dist = [&predicates](const auto& lhs, const auto& rhs) {
+    return boost::geometry::comparable_distance(predicates.point_or_relation, lhs) <
+           boost::geometry::comparable_distance(predicates.point_or_relation, rhs);
+  };
+
+  boost::nth_element(all, begin(all) + n, dist);
+  boost::copy_n(all, n, out);
+
+  return n;
 }
