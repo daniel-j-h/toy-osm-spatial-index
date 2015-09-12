@@ -1,4 +1,3 @@
-#include <boost/assert.hpp>
 #include <boost/range/numeric.hpp>
 #include <boost/range/algorithm/for_each.hpp>
 #include <boost/range/algorithm/nth_element.hpp>
@@ -34,12 +33,11 @@ public:
 
   parallel_rtree() = default;
 
-  template <typename Iter>
-  parallel_rtree(Iter first, Iter last);
+  template <typename InputIt>
+  parallel_rtree(InputIt first, InputIt last);
 
   template <typename Range>
-  parallel_rtree(const Range& rng)
-      : parallel_rtree(begin(rng), end(rng)) {}
+  parallel_rtree(const Range& range);
 
   size_type size() const;
 
@@ -47,8 +45,8 @@ public:
 
   void clear();
 
-  template <typename Predicates, typename OutIter>
-  size_type query(const Predicates& predicates, OutIter out) const;
+  template <typename Predicates, typename OutputIt>
+  size_type query(const Predicates& predicates, OutputIt out) const;
 
 private:
   std::vector<rtree_type> forest;
@@ -56,9 +54,10 @@ private:
 
 
 template <typename Value, std::size_t ChunkSize>
-template <typename Iter>
-parallel_rtree<Value, ChunkSize>::parallel_rtree(Iter first, Iter last) {
-  BOOST_ASSERT_MSG(first <= last, "backwards range not supported");
+template <typename InputIt>
+parallel_rtree<Value, ChunkSize>::parallel_rtree(InputIt first, InputIt last) {
+  static_assert(std::is_base_of<std::input_iterator_tag, typename std::iterator_traits<InputIt>::iterator_category>(),
+                "requires an iterator fulfilling at least the input iterator concept");
 
   // Keep locking during construction local out of the class's interface.
   // Idea: create rtrees locally per thread, acquire lock only for adding them to the forest.
@@ -70,7 +69,7 @@ parallel_rtree<Value, ChunkSize>::parallel_rtree(Iter first, Iter last) {
   decltype(forest) preForest;
   mutex_type preForestLock;
 
-  using range_type = tbb::blocked_range<Iter>;
+  using range_type = tbb::blocked_range<InputIt>;
   range_type range{first, last, ChunkSize};
 
   tbb::parallel_for(range, [&preForest, &preForestLock](const range_type& chunk) {
@@ -85,6 +84,12 @@ parallel_rtree<Value, ChunkSize>::parallel_rtree(Iter first, Iter last) {
   // All rtrees built, good to switch in.
   std::swap(preForest, forest);
 }
+
+
+template <typename Value, std::size_t ChunkSize>
+template <typename Range>
+parallel_rtree<Value, ChunkSize>::parallel_rtree(const Range& range)
+    : parallel_rtree(begin(range), end(range)) {}
 
 
 template <typename Value, std::size_t ChunkSize>
@@ -106,9 +111,12 @@ void parallel_rtree<Value, ChunkSize>::clear() {
 
 // Queries are so fast we don't need parallelism here, would only introduce overhead.
 template <typename Value, std::size_t ChunkSize>
-template <typename Predicates, typename OutIter>
+template <typename Predicates, typename OutputIt>
 typename parallel_rtree<Value, ChunkSize>::size_type parallel_rtree<Value, ChunkSize>::query(
-    const Predicates& predicates, OutIter out) const {
+    const Predicates& predicates, OutputIt out) const {
+
+  static_assert(std::is_base_of<std::output_iterator_tag, typename std::iterator_traits<OutputIt>::iterator_category>(),
+                "requires an iterator fulfilling at least the output iterator concept");
 
   // For all nearest neighbors, we query all rtrees and manually pick the nearest k items.
   // TODO: implement this in a more elegant and abstract way.
